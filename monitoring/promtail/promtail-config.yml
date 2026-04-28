@@ -22,3 +22,29 @@ scrape_configs:
       - source_labels: [__meta_docker_container_label_logging]
         action: keep
         regex: promtail
+      - source_labels: [__meta_docker_container_label_com_docker_compose_service]
+        target_label: service
+      - source_labels: [__meta_docker_container_image]
+        target_label: image
+    pipeline_stages:
+      # Essayer de parser les logs JSON émis par Flask
+      - json:
+          expressions:
+            level: level
+            logger: logger
+            message: message
+            time: time
+      # Promouvoir le champ "level" en label pour filtrer dans Grafana
+      - labels:
+          level:
+          logger:
+      # Utiliser le timestamp issu du log JSON si disponible
+      - timestamp:
+          source: time
+          format: "2006-01-02 15:04:05,999"
+          fallback_formats:
+            - RFC3339
+            - "2006-01-02T15:04:05Z07:00"
+      # Fallback: si le JSON n'est pas parseable, laisser passer la ligne brute
+      - output:
+          source: message
