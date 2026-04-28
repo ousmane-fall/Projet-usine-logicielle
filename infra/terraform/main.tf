@@ -77,7 +77,7 @@ resource "azurerm_network_security_group" "taskflow" {
     protocol                   = "Tcp"
     source_port_range          = "*"
     destination_port_range     = "3000"
-    source_address_prefix      = "*"
+    source_address_prefix      = var.allowed_monitoring_cidr
     destination_address_prefix = "*"
   }
 
@@ -89,7 +89,7 @@ resource "azurerm_network_security_group" "taskflow" {
     protocol                   = "Tcp"
     source_port_range          = "*"
     destination_port_range     = "9090"
-    source_address_prefix      = "*"
+    source_address_prefix      = var.allowed_monitoring_cidr
     destination_address_prefix = "*"
   }
 }
