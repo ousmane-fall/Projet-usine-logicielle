@@ -1,0 +1,76 @@
+name: CD
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+jobs:
+  terraform:
+    name: Provision VM Azure (Terraform)
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    outputs:
+      vm_ip: ${{ steps.tf_output.outputs.vm_ip }}
+    env:
+      ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        run: terraform init
+        working-directory: infra/terraform
+
+      - name: Terraform Apply
+        run: |
+          terraform apply -auto-approve \
+            -var="ssh_public_key=${{ secrets.VM_SSH_PUBLIC_KEY }}"
+        working-directory: infra/terraform
+
+      - name: Récupérer l'IP de la VM
+        id: tf_output
+        run: |
+          IP=$(terraform output -raw vm_public_ip)
+          echo "vm_ip=$IP" >> $GITHUB_OUTPUT
+        working-directory: infra/terraform
+
+  deploy:
+    name: Déployer l'app (Ansible)
+    runs-on: ubuntu-latest
+    needs: terraform
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Installer Ansible
+        run: pip install ansible
+
+      - name: Configurer la clé SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VM_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ needs.terraform.outputs.vm_ip }} >> ~/.ssh/known_hosts
+
+      - name: Générer l'inventaire Ansible
+        run: |
+          cat > infra/ansible/inventory.ini <<EOF
+          [servers]
+          taskflow-vm ansible_host=${{ needs.terraform.outputs.vm_ip }} ansible_user=azureuser ansible_ssh_private_key_file=~/.ssh/id_rsa
+
+          [servers:vars]
+          ansible_python_interpreter=/usr/bin/python3
+          EOF
+
+      - name: Déployer avec Ansible
+        run: |
+          ansible-playbook -i infra/ansible/inventory.ini infra/ansible/playbook.yml \
+            --extra-vars "image_tag=${{ github.sha }} app_image=ghcr.io/${{ github.repository_owner }}/taskflow"
