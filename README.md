@@ -1,301 +1,237 @@
-# TaskFlow — Projet Usine Logicielle
+# TaskFlow
 
-API REST de gestion de tâches (Flask) servant de support à un projet
-d'usine logicielle DevOps : tests, qualité, conteneurisation, CI/CD,
-monitoring, logs et infrastructure as code.
+TaskFlow est une petite API de gestion de tâches écrite en Python avec Flask.
+Honnêtement, l'application en elle-même n'est pas le vrai sujet du projet :
+elle sert surtout de prétexte pour mettre en place une vraie usine logicielle,
+avec des tests, du contrôle qualité, du Docker, un pipeline CI/CD, du monitoring,
+des logs centralisés et un déploiement infrastructure as code sur Azure.
 
-Projet pédagogique — l'objectif est de couvrir toutes les briques d'une
-usine logicielle dans une architecture **simple et compréhensible**.
+L'idée était de couvrir toutes les briques classiques d'un projet DevOps,
+sans pour autant tomber dans l'over-engineering. Le projet doit rester
+compréhensible et démontrable par un étudiant, donc à chaque fois qu'il a fallu
+choisir entre "propre mais compliqué" et "simple et clair", j'ai privilégié
+le simple et clair, en notant à la fin du document ce qu'il faudrait améliorer
+pour aller en production pour de vrai.
 
----
+## Démarrer le projet en local
 
-## Sommaire
+Le plus simple est d'utiliser Docker Compose, qui va lancer l'application,
+Prometheus, Grafana et la stack de logs en une seule commande.
 
-1. [Stack technique](#stack-technique)
-2. [Démarrage rapide (Docker Compose)](#démarrage-rapide)
-3. [API REST](#api-rest)
-4. [Développement local](#développement-local)
-5. [Tests et qualité](#tests-et-qualité)
-6. [CI/CD](#cicd)
-7. [Monitoring et logs](#monitoring-et-logs)
-8. [Déploiement Azure manuel](#déploiement-azure-manuel)
-9. [Sécurité](#sécurité)
-10. [Limites et améliorations possibles](#limites-et-améliorations-possibles)
-
----
-
-## Stack technique
-
-| Couche | Technologie |
-|---|---|
-| Backend | Python 3.12 · Flask 3 · SQLAlchemy · SQLite |
-| Conteneurisation | Docker (multi-stage, non-root) · Docker Compose |
-| CI/CD | GitHub Actions |
-| Qualité | ruff · pylint · mypy · bandit · pytest-cov |
-| Monitoring | Prometheus · Grafana |
-| Logs | Loki · Promtail |
-| IaC | Terraform · Ansible (Azure) |
-
----
-
-## Démarrage rapide
-
-Prérequis : Docker Desktop ou Docker Engine + Docker Compose v2.
+D'abord, on copie le fichier d'exemple des variables d'environnement et on
+l'adapte (au minimum la `SECRET_KEY` et le mot de passe Grafana) :
 
 ```bash
-# 1. Créer le fichier .env à partir du modèle
 cp .env.example .env
-# Editer .env : SECRET_KEY et GRAFANA_ADMIN_PASSWORD
-
-# 2. Lancer la stack complète
-docker compose up -d
-
-# 3. Vérifier
-curl http://localhost:5000/api/health
 ```
 
-| Service | URL |
-|---|---|
-| Application | http://localhost:5000 |
-| Métriques | http://localhost:5000/metrics |
-| Prometheus | http://localhost:9090 |
-| Grafana | http://localhost:3000 |
-| Loki | http://localhost:3100 |
+Ensuite on démarre tout :
 
-Pour tout arrêter : `docker compose down`. Pour effacer les volumes : `docker compose down -v`.
+```bash
+docker compose up -d
+```
 
----
+Au bout de quelques secondes, l'application est disponible sur
+http://localhost:5000, Grafana sur http://localhost:3000 (compte `admin` avec
+le mot de passe défini dans `.env`) et Prometheus sur http://localhost:9090.
+Pour vérifier que l'API répond bien, un petit `curl http://localhost:5000/api/health`
+suffit. Pour tout arrêter, `docker compose down`, et si on veut aussi effacer
+les volumes (base SQLite, dashboards, métriques) on rajoute `-v`.
 
-## API REST
+## L'API
 
-| Méthode | Route | Description |
-|---|---|---|
-| GET | `/api/health` | Statut |
-| GET | `/api/tasks` | Lister (`?status=todo\|in_progress\|done`) |
-| GET | `/api/tasks/:id` | Détail |
-| POST | `/api/tasks` | Créer (`title` requis) |
-| PUT | `/api/tasks/:id` | Mettre à jour |
-| DELETE | `/api/tasks/:id` | Supprimer |
-| POST | `/api/calculate` | Calculatrice (expression OU opération) |
-| POST | `/api/validate` | Validation email / username |
+L'API expose une petite gestion de tâches très classique : on peut lister les
+tâches, en créer, en modifier, en supprimer, et filtrer par statut. Les routes
+disponibles sont `/api/tasks` (GET et POST), `/api/tasks/<id>` (GET, PUT, DELETE),
+plus quelques routes utilitaires : `/api/health` pour le healthcheck,
+`/api/calculate` qui sait évaluer une expression arithmétique simple, et
+`/api/validate` qui valide un email ou un username.
 
-Exemples :
+Un exemple pour créer une tâche :
+
 ```bash
 curl -X POST http://localhost:5000/api/tasks \
   -H "Content-Type: application/json" \
-  -d '{"title":"Ma tache","status":"todo"}'
+  -d '{"title":"Ma premiere tache","status":"todo"}'
+```
 
+Et pour la calculatrice :
+
+```bash
 curl -X POST http://localhost:5000/api/calculate \
   -H "Content-Type: application/json" \
   -d '{"expression":"1 + 2 * 3"}'
-# {"result": 7}
 ```
 
----
+Petite précision côté sécurité : la calculatrice n'utilise pas `eval`, qui
+serait une porte ouverte à l'injection de code. À la place, l'expression est
+parsée avec le module `ast` de Python et on n'autorise qu'une liste blanche
+de nœuds (nombres, opérateurs basiques). C'est un bon réflexe à montrer.
 
-## Développement local
+## Travailler sur le code
+
+Si on veut développer ou faire tourner les tests sans Docker, il faut juste
+installer les dépendances Python (prod et dev) et lancer l'application :
 
 ```bash
-# Installer les dépendances (prod + dev)
 pip install -r requirements.txt -r requirements-dev.txt
-
-# Lancer l'app en mode développement (serveur Flask)
 python run.py
-
-# Lancer les tests
-pytest --cov=app --cov-report=term-missing
 ```
 
-Lancer **tous les checks qualité** d'un coup :
-```bash
-./scripts/quality_check.sh
-./scripts/quality_check.sh --fast   # sans pip-audit ni radon
-```
+Pour les tests, c'est `pytest --cov=app --cov-report=term-missing`. La couverture
+de code tourne autour de 96%, et la CI refuse de passer en dessous de 80%.
 
----
+Il y a aussi un script qui fait tourner tous les contrôles qualité d'un coup
+(lint, typage, sécurité, tests, complexité) : `./scripts/quality_check.sh`. Avec
+l'option `--fast`, il saute les contrôles les plus longs (pip-audit et radon),
+ce qui est pratique en développement.
 
-## Tests et qualité
+## Le contrôle qualité
 
-| Outil | Rôle | Commande |
-|---|---|---|
-| ruff | Lint + format | `ruff check app/ tests/` |
-| pylint | Analyse statique | `pylint app/` |
-| mypy | Vérification de types | `mypy` |
-| bandit | Sécurité du code | `bandit -r app/` |
-| pytest + pytest-cov | Tests + couverture | `pytest --cov=app` |
-| pip-audit | CVE des deps (informatif) | `pip-audit` |
-| radon | Complexité | `radon cc app/ -a` |
+Plusieurs outils sont enchaînés pour s'assurer que le code reste propre.
+**Ruff** s'occupe du lint et du formatage (c'est l'équivalent moderne et très
+rapide de flake8 + black + isort). **Pylint** fait une analyse statique plus
+poussée et il faut un score minimum de 7 sur 10 pour passer. **Mypy** vérifie
+les annotations de types en mode strict sur le code de l'application.
+**Bandit** cherche les patterns dangereux côté sécurité. **Pytest** lance les
+tests unitaires et d'intégration, **pytest-cov** mesure la couverture.
 
-**Couverture actuelle : ~96%** (seuil enforced en CI : 80%).
+Il y a aussi **pip-audit** qui scanne les dépendances pour repérer les CVE
+connues, et **radon** qui mesure la complexité cyclomatique. Ces deux derniers
+sont gardés en informatif et ne font pas planter la CI : pip-audit parce que
+les CVE des dépendances tierces évoluent tous les jours et casseraient le
+pipeline pour des raisons indépendantes du code, et radon parce que c'est plus
+une métrique d'aide à la lecture qu'un seuil dur à respecter.
 
----
+## Le pipeline CI/CD
 
-## CI/CD
+Tout passe par GitHub Actions, avec deux workflows séparés.
 
-### CI — `.github/workflows/ci.yml`
+Le workflow de **CI** se déclenche à chaque push et chaque pull request. Il
+enchaîne quatre jobs : un job qualité qui fait tourner ruff, pylint, mypy,
+bandit et pip-audit ; un job test qui lance pytest avec le seuil de couverture ;
+un job SonarCloud qui est optionnel et qui ne s'active que si un token a été
+configuré (sinon il se contente de skipper sans faire échouer le pipeline,
+pour ne pas bloquer ceux qui forkent le projet) ; et enfin un job docker-build
+qui construit l'image et la pousse sur GHCR pour les branches `main` et `dev`.
 
-```
-push / PR
-   |
-   ├── quality          ruff, pylint, mypy, bandit (+ pip-audit informatif)
-   ├── test             pytest --cov-fail-under=80
-   ├── sonar (optionnel) skip si SONAR_TOKEN absent
-   └── docker-build     push image vers GHCR (sur main et dev)
-```
-
-Toute erreur dans `quality` ou `test` **fait échouer** le pipeline.
-SonarCloud est facultatif : pas de token = job skip, pas d'échec.
-
-### CD — `.github/workflows/cd.yml`
-
-Le CD est **volontairement simplifié** : il ne déploie pas automatiquement
-sur Azure. Il valide uniquement que tout est prêt à déployer.
-
-```
-CI passe sur main
-   |
-   ├── docker-smoke-test   build + curl /api/health
-   └── terraform-validate  fmt + validate
-```
-
-Le déploiement réel sur Azure se fait **manuellement** (voir section ci-dessous).
-
-### Secrets GitHub nécessaires
-
-| Secret | Obligatoire ? | Usage |
-|---|---|---|
-| `GITHUB_TOKEN` | auto | Push image vers GHCR |
-| `SONAR_TOKEN` | non | Active SonarCloud (optionnel) |
-
-Pour le déploiement Azure manuel, aucun secret CI n'est requis.
-
----
+Le workflow de **CD** est volontairement minimal. Il se déclenche après une CI
+réussie sur `main` et il fait deux choses : un smoke test Docker (on construit
+l'image, on lance le conteneur et on tape sur `/api/health` pour vérifier
+qu'elle démarre bien), et une validation Terraform (`fmt` et `validate`).
+Il ne fait **pas** de `terraform apply` ni de déploiement Ansible automatique,
+et c'est un choix assumé : le but est d'éviter de provisionner par erreur des
+ressources Azure payantes à chaque merge sur `main`. Le déploiement réel est
+fait à la main quand on en a besoin (voir plus bas).
 
 ## Monitoring et logs
 
-### Prometheus
+L'application expose ses métriques sur `/metrics` grâce à
+`prometheus_flask_exporter`. Prometheus est configuré pour les scraper toutes
+les 10 secondes, en ajoutant des labels `service=taskflow` et
+`environment=production` qui permettent de bien identifier d'où viennent les
+métriques.
 
-L'app expose `/metrics` via `prometheus_flask_exporter`.
-Prometheus le scrape toutes les 10s avec les labels `service=taskflow`
-et `environment=production`.
+Grafana est lancé à côté, avec ses datasources Prometheus et Loki déjà
+provisionnées et un dashboard TaskFlow disponible dès le premier démarrage.
 
-Configuration : [monitoring/prometheus/prometheus.yml](monitoring/prometheus/prometheus.yml)
+Pour les logs, l'application les émet directement en JSON, ce qui permet à
+Promtail de les parser proprement et de promouvoir des champs comme `level`
+ou `logger` en labels Loki. Concrètement, dans Grafana on peut faire des
+requêtes du type `{service="taskflow"} | json | level="ERROR"` pour ne voir
+que les erreurs, sans avoir à grep dans des fichiers texte.
 
-### Grafana
+## Déployer sur Azure (manuel)
 
-Datasources Prometheus et Loki provisionnées automatiquement.
-Dashboard TaskFlow disponible dès le premier démarrage.
+Le déploiement Azure se fait en deux temps : d'abord Terraform pour provisionner
+l'infrastructure (un Resource Group, un VNet, un NSG et une petite VM Ubuntu),
+puis Ansible pour installer Docker dessus et démarrer la stack docker-compose.
 
-Login par défaut : `admin` / valeur de `GRAFANA_ADMIN_PASSWORD` dans `.env`.
-
-### Logs structurés (Loki + Promtail)
-
-Flask émet des logs en JSON :
-```json
-{"time":"2026-04-29 10:00:00,000","level":"INFO","logger":"app.api","message":"Listed 3 tasks"}
-```
-
-Promtail parse le JSON et promouvoit `level` et `logger` en labels Loki.
-
-Requêtes utiles dans Grafana :
-```
-{service="taskflow"} | json | level="ERROR"
-{container_name="taskflow-app"}
-```
-
----
-
-## Déploiement Azure manuel
-
-> Le CD ne déploie pas automatiquement sur Azure pour rester simple et
-> éviter de provisionner involontairement des ressources payantes.
-> Le déploiement se fait **à la main** en suivant ces étapes.
-
-### Prérequis
+Avant de commencer, il faut être connecté à Azure :
 
 ```bash
-# Installer Azure CLI, Terraform et Ansible
 az login
 ```
 
-### 1. Provisionner la VM (Terraform)
+Pour la partie Terraform, on se place dans `infra/terraform`, on copie le
+fichier d'exemple des variables et on renseigne au moins sa clé SSH publique
+ainsi que son IP pour restreindre l'accès aux ports de monitoring :
 
 ```bash
 cd infra/terraform
-
-# Créer le fichier de variables
 cp terraform.tfvars.example terraform.tfvars
-# Editer terraform.tfvars : ssh_public_key, allowed_monitoring_cidr
-
 terraform init
 terraform plan
 terraform apply
-
-# Récupérer l'IP de la VM
-terraform output vm_public_ip
 ```
 
-### 2. Déployer l'application (Ansible)
+Une fois la VM créée, Terraform affiche son IP publique. On la récupère puis
+on passe à Ansible :
 
 ```bash
 cd ../ansible
-
-# Adapter inventory.ini avec l'IP retournée par Terraform
-# (remplacer la ligne ansible_host=...)
-
+# adapter inventory.ini avec l'IP de la VM
 ansible-playbook -i inventory.ini playbook.yml \
-  --extra-vars "image_tag=latest app_image=ghcr.io/<your-user>/taskflow"
+  --extra-vars "image_tag=latest app_image=ghcr.io/<ton-user>/taskflow"
 ```
 
-### 3. Vérifier
+Au bout de quelques minutes, l'application est accessible sur
+`http://<ip_de_la_vm>:5000`.
 
-```bash
-curl http://<vm_public_ip>:5000/api/health
-```
-
-### 4. Détruire (très important pour ne pas payer)
+**Très important** une fois la démo terminée : penser à détruire les ressources
+pour ne pas continuer à consommer des crédits Azure inutilement.
 
 ```bash
 cd ../terraform
 terraform destroy
 ```
 
-Voir [infra/README.md](infra/README.md) pour plus de détails.
-
----
-
 ## Sécurité
 
-- `SECRET_KEY` lue depuis l'environnement — obligatoire en production (`FLASK_ENV=production`)
-- Image Docker : utilisateur **non-root** (`appuser`), multi-stage, HEALTHCHECK
-- Mot de passe Grafana via variable d'environnement (jamais en dur)
-- Évaluation arithmétique via `ast` (jamais `eval`) — résistant à l'injection
-- Validation stricte des entrées (regex + AST whitelist)
-- `bandit` exécuté en CI sur chaque commit
+Quelques points qui méritent d'être mentionnés. La `SECRET_KEY` de Flask est
+toujours lue depuis l'environnement et l'application refuse de démarrer en
+production si elle n'est pas définie. Le mot de passe admin de Grafana passe
+aussi par une variable d'environnement, donc rien n'est en dur dans le code.
+L'image Docker tourne avec un utilisateur non-root (`appuser`), ce qui limite
+les dégâts potentiels si jamais le conteneur était compromis. La calculatrice
+utilise `ast` plutôt que `eval`, comme expliqué plus haut. Et toutes les entrées
+utilisateur (emails, usernames) sont validées avec des regex stricts et des
+tailles bornées.
 
----
+Côté CI, bandit scanne le code à chaque commit, et pip-audit vérifie les
+dépendances (en mode informatif).
 
-## Limites et améliorations possibles
+## Ce qui pourrait être amélioré
 
-Le projet privilégie la simplicité pédagogique. Voici les améliorations
-qui auraient leur place dans un contexte de production :
+Comme dit en intro, j'ai assumé pas mal de raccourcis pour garder le projet
+simple. Si on devait le faire tourner pour de vrai en production, voici ce
+qui mériterait d'être renforcé :
 
-- **Backend Terraform distant** (Azure Blob Storage / S3) au lieu du state local
-- **Déploiement automatique CD** vers Azure (actuellement manuel par sécurité)
-- **SonarCloud obligatoire** dans la CI (actuellement optionnel)
-- **pip-audit bloquant** au lieu d'informatif (actuellement non-bloquant car les CVE deps évoluent constamment)
-- **Restriction réseau plus fine** sur le NSG Azure (actuellement ouvert au monde)
-- **Certificat HTTPS** (Let's Encrypt) au lieu d'HTTP en clair
-- **Base PostgreSQL** au lieu de SQLite pour la production
-- **Alertmanager** + règles d'alerte Prometheus
-- **Trivy** (scan d'image Docker) et **hadolint** (lint Dockerfile) en CI
-- **Sauvegarde automatique** du volume SQLite et des dashboards Grafana
-- **Multi-environnements** (dev / staging / prod) avec workspaces Terraform
+Côté infra, le state Terraform est stocké en local alors qu'en équipe il
+faudrait un backend distant comme Azure Blob Storage. Le NSG est aussi
+relativement ouvert sur Internet et mériterait des règles plus restrictives,
+et il faudrait un certificat HTTPS (Let's Encrypt) au lieu d'exposer l'app
+en HTTP en clair.
 
----
+Côté pipeline, le déploiement Azure pourrait être réintégré dans le CD pour
+être complètement automatique, SonarCloud pourrait devenir obligatoire et
+pip-audit pourrait devenir bloquant (avec une politique claire pour gérer les
+faux positifs). On pourrait aussi ajouter Trivy pour scanner les images
+Docker et hadolint pour le Dockerfile lui-même.
 
-## Documentation complémentaire
+Côté application, SQLite est suffisant pour la démo mais en prod on partirait
+sur PostgreSQL avec des sauvegardes régulières. Et côté monitoring, il
+manque de l'alerting (Alertmanager + règles Prometheus) pour être notifié
+quand quelque chose va mal.
 
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — schéma d'architecture
-- [QUALITY_REPORT.md](QUALITY_REPORT.md) — rapport qualité détaillé
-- [infra/README.md](infra/README.md) — Terraform + Ansible
+Enfin, il n'y a qu'un seul environnement : un vrai projet aurait au moins
+un dev, un staging et une prod, gérés via des workspaces Terraform.
+
+## Pour aller plus loin
+
+Deux documents complémentaires sont disponibles si on veut creuser :
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) explique le schéma d'architecture
+global, et [QUALITY_REPORT.md](QUALITY_REPORT.md) détaille toute la démarche
+qualité avec ce qui est automatisé, ce qui est manuel et les pistes
+d'amélioration. La doc spécifique à la partie infra est dans
+[infra/README.md](infra/README.md).
