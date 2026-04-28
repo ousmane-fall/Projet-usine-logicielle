@@ -1,156 +1,153 @@
 # Rapport Qualité — TaskFlow
 
-## 1. Outils de qualité utilisés
-
-| Outil | Version | Rôle |
-|---|---|---|
-| ruff | >= 0.4 | Linter + formateur Python (remplace flake8/isort/black) |
-| pylint | >= 3.0 | Analyse statique approfondie (conventions, bugs, complexité) |
-| mypy | >= 1.10 | Vérification statique des types (mode strict) |
-| bandit | >= 1.7 | Détection de vulnérabilités dans le code Python |
-| pip-audit | >= 2.7 | Audit CVE des dépendances installées |
-| radon | >= 6.0 | Mesure de la complexité cyclomatique et de l'indice de maintenabilité |
-| pytest | >= 8.0 | Framework de tests unitaires et d'intégration |
-| pytest-cov | >= 5.0 | Mesure de la couverture de code |
-| SonarCloud | cloud | Analyse globale qualité/sécurité avec historique |
-
-Configuration centralisée dans :
-- `pyproject.toml` — ruff + bandit + pytest + coverage
-- `.pylintrc` — pylint
-- `mypy.ini` — mypy
-- `requirements-dev.txt` — toutes les dépendances dev
+Document récapitulatif de la démarche qualité du projet.
+Approche **honnête** : on indique ce qui est automatisé, ce qui est manuel,
+et ce qui pourrait être amélioré.
 
 ---
 
-## 2. Résultats des tests
+## 1. Tests
 
-### Statistiques globales
+| Type | Outil | Localisation | Statut |
+|---|---|---|---|
+| Unitaires | pytest | `tests/unit/` | ✅ Automatisé en CI |
+| Intégration API | pytest + Flask test client | `tests/integration/` | ✅ Automatisé en CI |
+| Couverture | pytest-cov | — | ✅ Seuil bloquant 80% |
 
-| Catégorie | Nombre |
+**Couverture actuelle : ~96%**
+- `app/__init__.py` : 84%
+- `app/api.py` : 97%
+- `app/calculator.py` : 96%
+- `app/models.py` : 100%
+- `app/validators.py` : 100%
+
+Commande locale : `pytest --cov=app --cov-report=term-missing`
+
+---
+
+## 2. Analyse statique
+
+| Outil | Rôle | Bloquant en CI ? |
+|---|---|---|
+| **ruff** | Lint + format (E, F, I, N, W, B, UP, SIM, C4) | ✅ Oui |
+| **pylint** | Analyse statique (seuil 7.0/10) | ✅ Oui |
+| **mypy** | Vérification de types (strict sur `app/`) | ✅ Oui |
+| **bandit** | Sécurité du code Python | ✅ Oui |
+| **radon** | Complexité cyclomatique | ❌ Informatif |
+
+Configuration : [pyproject.toml](pyproject.toml), [.pylintrc](.pylintrc), [mypy.ini](mypy.ini)
+
+---
+
+## 3. Sécurité
+
+| Aspect | Mise en œuvre |
 |---|---|
-| Tests unitaires | 112 |
-| Tests d'intégration | 34 |
-| **Total** | **146** |
-| Echecs | 0 |
-| Durée | ~0.5s |
+| Secrets | Variables d'environnement (jamais en dur) — `SECRET_KEY` requis en prod |
+| Image Docker | Non-root, multi-stage, HEALTHCHECK |
+| Scan code | bandit en CI |
+| Scan deps | pip-audit (informatif, voir limites) |
+| Évaluation arithmétique | `ast` whitelist (pas d'`eval`) |
+| Validation entrées | Regex stricts + tailles bornées |
+| SonarCloud | Optionnel (skip si secret absent) |
 
-### Couverture par module
+---
 
-| Module | Couverture |
+## 4. CI/CD
+
+### CI (`.github/workflows/ci.yml`)
+
+Jobs :
+1. **quality** — ruff, pylint, mypy, bandit, pip-audit (informatif)
+2. **test** — pytest avec seuil de couverture 80% bloquant
+3. **sonar** — SonarCloud, skip silencieusement si `SONAR_TOKEN` absent
+4. **docker-build** — Build et push de l'image vers GHCR (sur `main` et `dev`)
+
+### CD (`.github/workflows/cd.yml`)
+
+Volontairement minimal pour rester pédagogique :
+1. **docker-smoke-test** — build l'image, lance le conteneur, curl `/api/health`
+2. **terraform-validate** — `terraform fmt -check` + `terraform validate`
+
+**Le déploiement Azure est manuel** (Terraform + Ansible — voir README).
+
+---
+
+## 5. Conteneurisation
+
+| Pratique | Statut |
 |---|---|
-| `app/__init__.py` | 85% |
-| `app/api.py` | 91% |
-| `app/calculator.py` | 96% |
-| `app/models.py` | 88% |
-| `app/validators.py` | 97% |
-| **Total app/** | **~91%** |
-
-Seuil configuré : **80%** (`--cov-fail-under=80` dans `pyproject.toml`).
+| Multi-stage build | ✅ |
+| Utilisateur non-root (`appuser`) | ✅ |
+| HEALTHCHECK sur `/api/health` | ✅ |
+| Image alpine/slim minimale | ✅ (python:3.12-slim) |
+| `.dockerignore` | ✅ |
+| Image scan (Trivy) | ❌ (à ajouter) |
 
 ---
 
-## 3. Analyse statique
+## 6. Monitoring & observabilité
 
-### ruff
-- **0 erreur** sur `app/` et `tests/`
-- Règles actives : E, F, I, N, W, B (bugbear), UP (pyupgrade), SIM (simplify), C4 (comprehensions)
-- Format vérifié : `ruff format --check`
-
-### pylint
-- Score cible : **>= 7.0/10**
-- Désactivations documentées : docstrings (C0114/C0115/C0116), duplicate-code (R0801)
-
-### mypy
-- Mode strict sur `app/`
-- `ignore_missing_imports = True` pour les packages tiers sans stubs
-- 0 erreur de type sur le code applicatif
-
----
-
-## 4. Sécurité
-
-### bandit
-- Aucun finding HIGH ou MEDIUM sur `app/`
-- B101 (assert) désactivé car les asserts sont dans les tests uniquement
-- Point notable : évaluation d'expressions arithmétiques via `ast.parse` (jamais `eval`) — résistant à l'injection de code
-
-### pip-audit
-- Aucune CVE connue dans les dépendances de production au moment de l'analyse
-- Vérification intégrée dans le job CI `quality`
-
-### Pratiques sécurisées
-- `SECRET_KEY` obligatoire en production (RuntimeError si absente)
-- Utilisateur Docker non-root (`appuser:appgroup`)
-- NSG Terraform restreint pour les ports monitoring (`allowed_monitoring_cidr`)
-- Pas de secrets dans le code (détectés par bandit + revue manuelle)
-- Validation stricte des entrées via regex + whitelist AST
-
----
-
-## 5. Complexité
-
-### radon — Complexité Cyclomatique
-
-| Module | Note moyenne | Détail |
+| Brique | Outil | Statut |
 |---|---|---|
-| `app/calculator.py` | A | `_eval_node` : complexité 7 (acceptable) |
-| `app/api.py` | A | Fonctions <= 5 branches |
-| `app/validators.py` | A | Fonctions <= 4 branches |
-| `app/models.py` | A | Modèle simple |
-
-### radon — Indice de Maintenabilité
-
-Tous les modules sont en grade **A** (MI > 20), indiquant un code
-facilement maintenable.
+| Métriques applicatives | prometheus_flask_exporter | ✅ |
+| Scraping | Prometheus | ✅ |
+| Visualisation | Grafana (dashboard provisionné) | ✅ |
+| Logs structurés | JSON via logging | ✅ |
+| Agrégation logs | Loki + Promtail | ✅ |
+| Alerting | — | ❌ (à ajouter : Alertmanager) |
 
 ---
 
-## 6. Corrections apportées
+## 7. Infrastructure as Code
 
-### Problèmes identifiés et résolus
-
-| Problème | Origine | Correction |
+| Outil | Périmètre | Statut |
 |---|---|---|
-| Route `/api/` dupliquée | api.py | Suppression de la route redondante |
-| `SECRET_KEY` en dur | `__init__.py` | Lecture depuis `os.environ` |
-| Dépendances dev en prod | `requirements.txt` | Séparation `requirements-dev.txt` |
-| Serveur de dev en production | `CMD python run.py` | Remplacement par gunicorn |
-| Image Docker root | `Dockerfile` | Ajout utilisateur `appuser` non-root |
-| Mot de passe Grafana en dur | `docker-compose.yml` | Variable `GRAFANA_ADMIN_PASSWORD` |
-| NSG trop ouvert | `main.tf` | Variable `allowed_monitoring_cidr` |
-| Logs non structurés | Flask | Format JSON dans `logging.basicConfig` |
-| `eval` pour calculs | — | Jamais utilisé — évaluation via `ast` |
+| Terraform | RG, VNet, Subnet, NSG, IP publique, VM Ubuntu | ✅ Validé en CI |
+| Ansible | Install Docker, déploiement compose, monitoring | ✅ |
+| State Terraform | Local (par défaut) | ⚠️ Voir limites |
 
 ---
 
-## 7. Pipeline qualité automatisée
+## 8. Synthèse — Ce qui est automatisé / manuel
 
-Le script `scripts/quality_check.sh` exécute l'intégralité de la chaîne :
+| Étape | Automatisé | Manuel |
+|---|:-:|:-:|
+| Lint, format, types, sécurité code | ✅ | |
+| Tests + couverture | ✅ | |
+| Build & push image Docker | ✅ | |
+| Validation Terraform | ✅ | |
+| Smoke test Docker | ✅ | |
+| Provisioning Azure (Terraform apply) | | ✅ |
+| Déploiement Ansible | | ✅ |
+| Destruction Azure (Terraform destroy) | | ✅ |
 
-```
-ruff lint -> ruff format -> pylint -> mypy -> pytest+cov -> bandit -> radon -> pip-audit
+---
+
+## 9. Limites et améliorations possibles
+
+Choix de **simplicité pédagogique** assumés. À renforcer pour un contexte de production :
+
+- **Backend Terraform distant** (Azure Blob Storage) — actuellement local
+- **Déploiement automatique** vers Azure — actuellement manuel par sécurité (éviter coûts)
+- **SonarCloud obligatoire** — actuellement optionnel pour faciliter le fork du projet
+- **pip-audit bloquant** — actuellement informatif (les CVE des deps évoluent quotidiennement et casseraient la CI sans rapport avec le code)
+- **Trivy** (scan image Docker) et **hadolint** (lint Dockerfile) à ajouter en CI
+- **Alertmanager** + règles d'alerte Prometheus
+- **Restriction réseau** plus fine sur le NSG Azure
+- **HTTPS** (Let's Encrypt) au lieu d'HTTP
+- **PostgreSQL** au lieu de SQLite en production
+- **Multi-environnements** (dev / staging / prod) via workspaces Terraform
+- **Tests de charge** (k6, Locust)
+- **Renovate / Dependabot** pour la mise à jour automatique des dépendances
+
+---
+
+## 10. Comment exécuter tous les contrôles localement
+
+```bash
+./scripts/quality_check.sh          # complet
+./scripts/quality_check.sh --fast   # sans pip-audit ni radon
 ```
 
-Il retourne un code de sortie non-nul si un seul check échoue, et liste
-les étapes en échec en fin d'exécution.
-
-Le même pipeline est intégré dans le job GitHub Actions `quality` du CI :
-chaque commit déclenche automatiquement la vérification.
-
----
-
-## 8. Conclusion
-
-Le projet respecte les exigences d'une usine logicielle DevOps :
-
-- **Tests** : 146 tests, couverture ~91%, seuil 80% enforced en CI
-- **Qualité** : 4 outils d'analyse statique, 0 erreur bloquante
-- **Sécurité** : bandit + pip-audit en CI, pratiques défensives dans le code
-- **Maintenabilité** : complexité faible (grade A radon), types annotés (mypy)
-- **Reproductibilité** : pipeline CI/CD automatisé, IaC Terraform/Ansible
-
-Axes d'amélioration possibles :
-- Migrer de SQLite vers PostgreSQL pour la production
-- Ajouter la pagination sur les endpoints de liste
-- Activer le backend Terraform distant (`backend.tf`) pour le CI multi-runs
-- Ajouter des alertes Prometheus (Alertmanager)
+Ou individuellement, voir le tableau du [README](README.md#tests-et-qualité).
