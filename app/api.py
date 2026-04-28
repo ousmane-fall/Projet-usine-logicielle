@@ -3,6 +3,7 @@ import logging
 from flask import Blueprint, jsonify, request
 
 from app import db
+from app.calculator import Calculator, CalculatorError
 from app.models import Task
 
 api_bp = Blueprint("api", __name__, template_folder="../templates")
@@ -12,6 +13,50 @@ logger = logging.getLogger(__name__)
 @api_bp.route("/health")
 def health():
     return jsonify({"status": "ok"})
+
+
+_CALC_OPS = {
+    "add": (Calculator.add, 2),
+    "subtract": (Calculator.subtract, 2),
+    "multiply": (Calculator.multiply, 2),
+    "divide": (Calculator.divide, 2),
+    "power": (Calculator.power, 2),
+    "modulo": (Calculator.modulo, 2),
+    "sqrt": (Calculator.sqrt, 1),
+}
+
+
+@api_bp.route("/calculate", methods=["POST"])
+def calculate():
+    """Calcule une expression ou applique une opération nommée.
+
+    Corps JSON accepté :
+      - {"expression": "1 + 2 * 3"}
+      - {"operation": "add", "a": 1, "b": 2}
+      - {"operation": "sqrt", "a": 9}
+    """
+    data = request.get_json(silent=True) or {}
+
+    try:
+        if "expression" in data:
+            result = Calculator.calculate(data["expression"])
+        elif "operation" in data:
+            op_name = data["operation"]
+            if op_name not in _CALC_OPS:
+                return jsonify({"error": "operation inconnue"}), 400
+            func, arity = _CALC_OPS[op_name]
+            try:
+                a = float(data["a"])
+                args = [a] if arity == 1 else [a, float(data["b"])]
+            except (KeyError, TypeError, ValueError):
+                return jsonify({"error": "operandes invalides"}), 400
+            result = func(*args)
+        else:
+            return jsonify({"error": "expression ou operation requise"}), 400
+    except CalculatorError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    return jsonify({"result": result})
 
 
 @api_bp.route("/tasks", methods=["GET"])
