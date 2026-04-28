@@ -1,0 +1,72 @@
+services:
+  app:
+    build: .
+    container_name: taskflow-app
+    ports:
+      - "5000:5000"
+    volumes:
+      - app_data:/app/instance
+    networks:
+      - taskflow_net
+    labels:
+      logging: "promtail"
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: taskflow-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    networks:
+      - taskflow_net
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: taskflow-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    networks:
+      - taskflow_net
+    restart: unless-stopped
+
+  loki:
+    image: grafana/loki:latest
+    container_name: taskflow-loki
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./monitoring/loki/loki-config.yml:/etc/loki/local-config.yaml:ro
+      - loki_data:/loki
+    networks:
+      - taskflow_net
+    restart: unless-stopped
+
+  promtail:
+    image: grafana/promtail:latest
+    container_name: taskflow-promtail
+    volumes:
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/log:/var/log:ro
+      - ./monitoring/promtail/promtail-config.yml:/etc/promtail/config.yml:ro
+    networks:
+      - taskflow_net
+    restart: unless-stopped
+
+networks:
+  taskflow_net:
+    driver: bridge
+
+volumes:
+  app_data:
+  grafana_data:
+  loki_data:
