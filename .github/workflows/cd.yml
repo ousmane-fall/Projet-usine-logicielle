@@ -7,10 +7,47 @@ on:
     branches: [main]
 
 jobs:
+  smoke-test:
+    name: Smoke test Docker image
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull image built by CI
+        run: docker pull ghcr.io/${{ github.repository_owner }}/taskflow:${{ github.event.workflow_run.head_sha }}
+
+      - name: Run container and smoke test /api/health
+        run: |
+          docker run -d --name smoke \
+            -e SECRET_KEY=ci-smoke-secret \
+            -e FLASK_ENV=production \
+            -p 5000:5000 \
+            ghcr.io/${{ github.repository_owner }}/taskflow:${{ github.event.workflow_run.head_sha }}
+          echo "Waiting for app to be ready..."
+          for i in $(seq 1 15); do
+            if curl -sf http://localhost:5000/api/health; then
+              echo "Health check passed"
+              break
+            fi
+            sleep 2
+          done
+          curl -sf http://localhost:5000/api/health | grep '"status"' | grep '"ok"'
+          docker logs smoke
+          docker stop smoke
+
   terraform:
     name: Provision VM Azure (Terraform)
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    needs: smoke-test
+    environment: production
     outputs:
       vm_ip: ${{ steps.tf_output.outputs.vm_ip }}
     env:
@@ -26,8 +63,16 @@ jobs:
         with:
           terraform_wrapper: false
 
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive
+        working-directory: infra/terraform
+
       - name: Terraform Init
         run: terraform init
+        working-directory: infra/terraform
+
+      - name: Terraform Validate
+        run: terraform validate
         working-directory: infra/terraform
 
       - name: Terraform Apply
@@ -36,7 +81,7 @@ jobs:
             -var="ssh_public_key=${{ secrets.VM_SSH_PUBLIC_KEY }}"
         working-directory: infra/terraform
 
-      - name: Récupérer l'IP de la VM
+      - name: Get VM IP
         id: tf_output
         run: |
           IP=$(terraform output -raw vm_public_ip)
@@ -44,23 +89,24 @@ jobs:
         working-directory: infra/terraform
 
   deploy:
-    name: Déployer l'app (Ansible)
+    name: Deploy app (Ansible)
     runs-on: ubuntu-latest
     needs: terraform
+    environment: production
     steps:
       - uses: actions/checkout@v4
 
-      - name: Installer Ansible
+      - name: Install Ansible
         run: pip install ansible
 
-      - name: Configurer la clé SSH
+      - name: Configure SSH key
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.VM_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H ${{ needs.terraform.outputs.vm_ip }} >> ~/.ssh/known_hosts
 
-      - name: Générer l'inventaire Ansible
+      - name: Generate Ansible inventory
         run: |
           cat > infra/ansible/inventory.ini <<EOF
           [servers]
@@ -70,7 +116,20 @@ jobs:
           ansible_python_interpreter=/usr/bin/python3
           EOF
 
-      - name: Déployer avec Ansible
+      - name: Deploy with Ansible
         run: |
           ansible-playbook -i infra/ansible/inventory.ini infra/ansible/playbook.yml \
-            --extra-vars "image_tag=${{ github.sha }} app_image=ghcr.io/${{ github.repository_owner }}/taskflow"
+            --extra-vars "image_tag=${{ github.event.workflow_run.head_sha }} app_image=ghcr.io/${{ github.repository_owner }}/taskflow"
+
+      - name: Post-deploy smoke test
+        run: |
+          for i in $(seq 1 15); do
+            if curl -sf http://${{ needs.terraform.outputs.vm_ip }}:5000/api/health; then
+              echo "Remote health check passed"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Remote health check FAILED after 75s"
+          exit 1
+
