@@ -5,6 +5,7 @@ from flask import Blueprint, jsonify, request
 from app import db
 from app.calculator import Calculator, CalculatorError
 from app.models import Task
+from app.validators import ValidationError, validate_email, validate_username
 
 api_bp = Blueprint("api", __name__, template_folder="../templates")
 logger = logging.getLogger(__name__)
@@ -13,6 +14,23 @@ logger = logging.getLogger(__name__)
 @api_bp.route("/health")
 def health():
     return jsonify({"status": "ok"})
+
+
+@api_bp.route("/validate", methods=["POST"])
+def validate_payload():
+    """Valide email et/ou username (au moins l'un des deux requis)."""
+    data = request.get_json(silent=True) or {}
+    if "email" not in data and "username" not in data:
+        return jsonify({"error": "email ou username requis"}), 400
+    result = {}
+    try:
+        if "email" in data:
+            result["email"] = validate_email(data["email"])
+        if "username" in data:
+            result["username"] = validate_username(data["username"])
+    except ValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"valid": True, **result})
 
 
 _CALC_OPS = {
@@ -81,6 +99,16 @@ def create_task():
     data = request.get_json()
     if not data or not data.get("title"):
         return jsonify({"error": "title is required"}), 400
+    if "assignee_email" in data:
+        try:
+            validate_email(data["assignee_email"])
+        except ValidationError as exc:
+            return jsonify({"error": str(exc)}), 400
+    if "assignee_username" in data:
+        try:
+            validate_username(data["assignee_username"])
+        except ValidationError as exc:
+            return jsonify({"error": str(exc)}), 400
     task = Task(
         title=data["title"],
         description=data.get("description", ""),
