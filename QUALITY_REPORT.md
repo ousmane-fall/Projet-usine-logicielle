@@ -1,153 +1,134 @@
-# Rapport Qualité — TaskFlow
+# Rapport qualité — TaskFlow
 
-Document récapitulatif de la démarche qualité du projet.
-Approche **honnête** : on indique ce qui est automatisé, ce qui est manuel,
-et ce qui pourrait être amélioré.
+Ce document résume la démarche qualité du projet. L'objectif n'était pas de
+cocher le maximum d'outils pour faire bien, mais de mettre en place des
+contrôles qui ont du sens et d'être honnête sur ce qui est automatisé, ce qui
+est manuel, et ce qu'on n'a pas fait (et pourquoi).
 
----
+## Les tests
 
-## 1. Tests
+Il y a deux niveaux de tests. Les tests unitaires dans `tests/unit/` testent
+chaque fonction isolément : on appelle directement `Calculator.add(2, 3)` et
+on vérifie que ça retourne `5`, sans lancer l'app. Les tests d'intégration dans
+`tests/integration/` testent l'API de bout en bout : on envoie une vraie requête
+HTTP (via le client de test Flask) et on vérifie le code de retour et le JSON.
 
-| Type | Outil | Localisation | Statut |
-|---|---|---|---|
-| Unitaires | pytest | `tests/unit/` | ✅ Automatisé en CI |
-| Intégration API | pytest + Flask test client | `tests/integration/` | ✅ Automatisé en CI |
-| Couverture | pytest-cov | — | ✅ Seuil bloquant 80% |
+La couverture de code tourne autour de 96% sur l'ensemble du projet. Le détail
+par fichier : `app/__init__.py` est à 84% (les branches d'erreur de démarrage
+sont difficiles à tester), `app/api.py` à 97%, `app/calculator.py` à 96%,
+`app/models.py` et `app/validators.py` à 100%. Le pipeline CI refuse de passer
+si on tombe sous 80%.
 
-**Couverture actuelle : ~96%**
-- `app/__init__.py` : 84%
-- `app/api.py` : 97%
-- `app/calculator.py` : 96%
-- `app/models.py` : 100%
-- `app/validators.py` : 100%
+Pour lancer les tests localement : `pytest --cov=app --cov-report=term-missing`.
 
-Commande locale : `pytest --cov=app --cov-report=term-missing`
+## La qualité du code
 
----
+On utilise **ruff** pour deux choses : le lint (détecter les imports inutilisés,
+les variables non définies, les mauvais patterns) et le formatage (vérifier que
+le code est bien mis en forme). Ces deux contrôles sont bloquants en CI : si le
+code ne passe pas ruff, le reste du pipeline ne s'exécute pas.
 
-## 2. Analyse statique
+Pour corriger automatiquement le formatage en local : `ruff format app/ tests/`.
 
-| Outil | Rôle | Bloquant en CI ? |
-|---|---|---|
-| **ruff** | Lint + format (E, F, I, N, W, B, UP, SIM, C4) | ✅ Oui |
-| **pylint** | Analyse statique (seuil 7.0/10) | ✅ Oui |
-| **mypy** | Vérification de types (strict sur `app/`) | ✅ Oui |
-| **bandit** | Sécurité du code Python | ✅ Oui |
-| **radon** | Complexité cyclomatique | ❌ Informatif |
+On a aussi des outils de qualité supplémentaires disponibles en local mais qui
+ne tournent plus en CI : **pylint** pour l'analyse statique avancée, **mypy**
+pour la vérification des types, **bandit** pour repérer les patterns dangereux
+côté sécurité. Ils restent utiles pendant le développement et sont accessibles
+via `./scripts/quality_check.sh`.
 
-Configuration : [pyproject.toml](pyproject.toml), [.pylintrc](.pylintrc), [mypy.ini](mypy.ini)
+## La sécurité
 
----
+Quelques points concrets. La `SECRET_KEY` de Flask est toujours lue depuis
+l'environnement — l'application refuse de démarrer en mode production si elle
+n'est pas définie, ce qui évite d'oublier de la configurer sur un serveur.
+Le mot de passe Grafana passe aussi par une variable d'environnement, donc
+rien n'est jamais en dur dans le code ou dans Git.
 
-## 3. Sécurité
+La calculatrice mérite une mention particulière : elle n'utilise pas `eval`,
+qui exécuterait n'importe quel code Python et serait une faille de sécurité
+évidente. À la place, l'expression est parsée avec le module `ast` de Python
+et on n'autorise qu'une liste blanche d'opérations (additions, soustractions,
+multiplications, divisions). Tout le reste est rejeté.
 
-| Aspect | Mise en œuvre |
-|---|---|
-| Secrets | Variables d'environnement (jamais en dur) — `SECRET_KEY` requis en prod |
-| Image Docker | Non-root, multi-stage, HEALTHCHECK |
-| Scan code | bandit en CI |
-| Scan deps | pip-audit (informatif, voir limites) |
-| Évaluation arithmétique | `ast` whitelist (pas d'`eval`) |
-| Validation entrées | Regex stricts + tailles bornées |
-| SonarCloud | Optionnel (skip si secret absent) |
+L'image Docker tourne avec un utilisateur non-root (`appuser`). C'est un réflexe
+de base : si le conteneur est compromis, l'attaquant n'a pas les droits root
+sur la machine hôte.
 
----
+## Le pipeline CI/CD
 
-## 4. CI/CD
+Le pipeline CI se déclenche à chaque push. Il enchaîne trois jobs dans l'ordre :
+d'abord la qualité (ruff lint + format), puis les tests (pytest avec le seuil
+de couverture), puis le build Docker. Si la qualité échoue, les tests ne
+s'exécutent pas. Si les tests échouent, l'image n'est pas construite. Sur les
+branches `main` et `dev`, l'image est poussée automatiquement sur GHCR
+(le registre Docker de GitHub).
 
-### CI (`.github/workflows/ci.yml`)
+Le pipeline CD est volontairement minimal. Il se déclenche quand la CI passe
+sur `main` et fait deux choses : un smoke test Docker (construire l'image,
+lancer un conteneur, vérifier que `/api/health` répond) et une validation
+Terraform (vérifier que le code d'infra est bien formaté et syntaxiquement
+correct). Il ne déploie rien automatiquement sur Azure — c'est un choix assumé
+pour éviter de provisionner des ressources payantes à chaque merge.
 
-Jobs :
-1. **quality** — ruff, pylint, mypy, bandit, pip-audit (informatif)
-2. **test** — pytest avec seuil de couverture 80% bloquant
-3. **sonar** — SonarCloud, skip silencieusement si `SONAR_TOKEN` absent
-4. **docker-build** — Build et push de l'image vers GHCR (sur `main` et `dev`)
+## La conteneurisation
 
-### CD (`.github/workflows/cd.yml`)
+Le Dockerfile utilise un build multi-stage : une première étape installe les
+dépendances Python, une deuxième repart d'une image propre et ne copie que le
+résultat. L'image finale est légère car elle ne contient pas pip, les caches
+ou les outils de build. L'app tourne avec un utilisateur non-root et un
+`HEALTHCHECK` surveille toutes les 30 secondes que l'app répond bien.
 
-Volontairement minimal pour rester pédagogique :
-1. **docker-smoke-test** — build l'image, lance le conteneur, curl `/api/health`
-2. **terraform-validate** — `terraform fmt -check` + `terraform validate`
+## Le monitoring et les logs
 
-**Le déploiement Azure est manuel** (Terraform + Ansible — voir README).
+L'application expose ses métriques sur `/metrics` via `prometheus_flask_exporter`.
+Prometheus les collecte toutes les 10 secondes, Grafana les affiche. Le dashboard
+est provisionné automatiquement au premier démarrage, donc pas besoin de le
+configurer à la main.
 
----
+Pour les logs, l'app écrit en JSON sur la sortie standard. Promtail lit ces logs,
+les parse et les envoie à Loki. Dans Grafana, on peut ensuite filtrer par niveau
+(`level="ERROR"`) ou par module (`logger="app.api"`), ce qui est beaucoup plus
+pratique que de grep dans des fichiers texte.
 
-## 5. Conteneurisation
+Ce qui manque pour aller plus loin côté observabilité : de l'alerting. Actuellement
+on voit ce qui se passe dans Grafana, mais personne n'est notifié si l'app commence
+à retourner des erreurs 500. Alertmanager + des règles Prometheus seraient la
+suite logique.
 
-| Pratique | Statut |
-|---|---|
-| Multi-stage build | ✅ |
-| Utilisateur non-root (`appuser`) | ✅ |
-| HEALTHCHECK sur `/api/health` | ✅ |
-| Image alpine/slim minimale | ✅ (python:3.12-slim) |
-| `.dockerignore` | ✅ |
-| Image scan (Trivy) | ❌ (à ajouter) |
+## L'infrastructure as code
 
----
+Terraform décrit l'infrastructure Azure dans des fichiers `.tf` : un Resource
+Group, un réseau, un firewall (NSG) avec les ports ouverts pour l'app et le
+monitoring, et une petite VM Ubuntu. L'avantage par rapport à cliquer dans
+l'interface Azure, c'est que c'est reproductible et versionné dans Git.
 
-## 6. Monitoring & observabilité
+Le state Terraform est stocké en local par défaut, ce qui est suffisant pour
+une démo individuelle mais qui ne fonctionnerait pas en équipe (deux personnes
+ne peuvent pas partager le même state local). En production il faudrait un
+backend distant comme Azure Blob Storage.
 
-| Brique | Outil | Statut |
-|---|---|---|
-| Métriques applicatives | prometheus_flask_exporter | ✅ |
-| Scraping | Prometheus | ✅ |
-| Visualisation | Grafana (dashboard provisionné) | ✅ |
-| Logs structurés | JSON via logging | ✅ |
-| Agrégation logs | Loki + Promtail | ✅ |
-| Alerting | — | ❌ (à ajouter : Alertmanager) |
+Ansible prend le relais une fois la VM créée : il se connecte en SSH et installe
+Docker, copie le `docker-compose.yml` et lance la stack. Les deux outils se
+complètent bien : Terraform gère l'infrastructure, Ansible gère la configuration
+logicielle.
 
----
+## Ce qui pourrait être amélioré
 
-## 7. Infrastructure as Code
+Même logique que dans le README : voici les raccourcis assumés qui mériteraient
+d'être comblés pour un contexte de production.
 
-| Outil | Périmètre | Statut |
-|---|---|---|
-| Terraform | RG, VNet, Subnet, NSG, IP publique, VM Ubuntu | ✅ Validé en CI |
-| Ansible | Install Docker, déploiement compose, monitoring | ✅ |
-| State Terraform | Local (par défaut) | ⚠️ Voir limites |
+Côté pipeline, le déploiement Azure pourrait être automatisé dans le CD, avec
+un backend Terraform distant pour stocker le state. bandit et mypy pourraient
+revenir en CI. pip-audit pourrait devenir bloquant avec une politique claire
+pour gérer les faux positifs. On pourrait aussi ajouter Trivy pour scanner
+les images Docker à la recherche de CVE.
 
----
+Côté infrastructure, le NSG est actuellement assez ouvert. Les ports de
+monitoring (Grafana, Prometheus) devraient être restreints à une IP de confiance
+plutôt qu'ouverts au monde. L'app devrait tourner derrière HTTPS avec un
+certificat Let's Encrypt. Et SQLite devrait être remplacé par PostgreSQL, avec
+des sauvegardes régulières.
 
-## 8. Synthèse — Ce qui est automatisé / manuel
-
-| Étape | Automatisé | Manuel |
-|---|:-:|:-:|
-| Lint, format, types, sécurité code | ✅ | |
-| Tests + couverture | ✅ | |
-| Build & push image Docker | ✅ | |
-| Validation Terraform | ✅ | |
-| Smoke test Docker | ✅ | |
-| Provisioning Azure (Terraform apply) | | ✅ |
-| Déploiement Ansible | | ✅ |
-| Destruction Azure (Terraform destroy) | | ✅ |
-
----
-
-## 9. Limites et améliorations possibles
-
-Choix de **simplicité pédagogique** assumés. À renforcer pour un contexte de production :
-
-- **Backend Terraform distant** (Azure Blob Storage) — actuellement local
-- **Déploiement automatique** vers Azure — actuellement manuel par sécurité (éviter coûts)
-- **SonarCloud obligatoire** — actuellement optionnel pour faciliter le fork du projet
-- **pip-audit bloquant** — actuellement informatif (les CVE des deps évoluent quotidiennement et casseraient la CI sans rapport avec le code)
-- **Trivy** (scan image Docker) et **hadolint** (lint Dockerfile) à ajouter en CI
-- **Alertmanager** + règles d'alerte Prometheus
-- **Restriction réseau** plus fine sur le NSG Azure
-- **HTTPS** (Let's Encrypt) au lieu d'HTTP
-- **PostgreSQL** au lieu de SQLite en production
-- **Multi-environnements** (dev / staging / prod) via workspaces Terraform
-- **Tests de charge** (k6, Locust)
-- **Renovate / Dependabot** pour la mise à jour automatique des dépendances
-
----
-
-## 10. Comment exécuter tous les contrôles localement
-
-```bash
-./scripts/quality_check.sh          # complet
-./scripts/quality_check.sh --fast   # sans pip-audit ni radon
-```
-
-Ou individuellement, voir le tableau du [README](README.md#tests-et-qualité).
+Côté organisation, il n'y a qu'un seul environnement. Un projet sérieux aurait
+au moins un dev, un staging et une prod, idéalement avec des workspaces Terraform
+séparés et des variables d'environnement distinctes.
