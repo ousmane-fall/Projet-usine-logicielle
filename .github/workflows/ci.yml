@@ -43,7 +43,39 @@ jobs:
         run: pip install -r requirements.txt -r requirements-dev.txt
 
       - name: pytest avec coverage
-        run: pytest --cov=app --cov-report=term-missing --cov-fail-under=80
+        run: pytest --cov=app --cov-report=xml --cov-report=term-missing --cov-fail-under=80
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.xml
+
+  sonar:
+    name: SonarCloud
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Installer les dependances
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Generer la coverage
+        run: pytest --cov=app --cov-report=xml
+
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarcloud-github-action@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
   docker-build:
     name: Build image Docker
