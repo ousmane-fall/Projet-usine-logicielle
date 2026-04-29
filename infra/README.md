@@ -60,10 +60,16 @@ VM_IP=$(terraform output -raw vm_public_ip)
 cd ../ansible
 sed -i "s/VM_IP_PLACEHOLDER/$VM_IP/" inventory.ini
 
-# Lancer le playbook
+# Lancer le playbook (les credentials sont generes automatiquement sur la VM)
 ansible-playbook -i inventory.ini playbook.yml \
-  --extra-vars "image_tag=latest app_image=ghcr.io/<your-user>/taskflow"
+  --extra-vars "app_image=ghcr.io/<your-user>/taskflow image_tag=latest \
+                secret_key=$(openssl rand -hex 32) \
+                grafana_admin_password=$(openssl rand -base64 16)"
 ```
+
+> Si l'image GHCR est privee, executer d'abord sur la VM :
+> `docker login ghcr.io -u <user> -p <PAT_avec_read:packages>`
+> Ou rendre le package public dans les Settings de GitHub Packages.
 
 ## Limites et améliorations possibles
 

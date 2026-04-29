@@ -1,9 +1,11 @@
 ---
-- name: Déploiement complet TaskFlow
+# Variables a fournir via --extra-vars (voir infra/README.md) :
+#   app_image, image_tag, secret_key, grafana_admin_password
+- name: Deploiement complet TaskFlow
   hosts: servers
   become: true
   vars:
-    app_image: "ghcr.io/YOUR_GITHUB_USERNAME/taskflow"
+    app_image: "ghcr.io/ousmane-fall/taskflow"
     image_tag: "latest"
     project_dir: /opt/taskflow
 

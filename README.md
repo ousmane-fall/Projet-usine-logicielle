@@ -15,6 +15,24 @@ pour aller en production pour de vrai.
 
 ## Démarrer le projet en local
 
+**Tester l'environnement complet (3 commandes) :**
+
+```bash
+git clone https://github.com/ousmane-fall/Projet-usine-logicielle.git
+cd Projet-usine-logicielle
+cp .env.example .env       # editer SECRET_KEY et GRAFANA_ADMIN_PASSWORD
+docker compose up -d
+```
+
+Au bout d'une vingtaine de secondes, tout tourne :
+- API : http://localhost:5000 (test : `curl http://localhost:5000/api/health`)
+- Grafana : http://localhost:3000 (admin / mot de passe du `.env`)
+- Prometheus : http://localhost:9090
+
+Pour arrêter : `docker compose down` (ajouter `-v` pour effacer aussi les volumes).
+
+### Détails
+
 Le plus simple est d'utiliser Docker Compose, qui va lancer l'application,
 Prometheus, Grafana et la stack de logs en une seule commande.
 
