@@ -12,9 +12,7 @@ import ast
 import math
 import operator
 import re
-from typing import Union
-
-Number = Union[int, float]
+Number = int | float
 
 _ALLOWED_CHARS = re.compile(r"^[0-9\.\+\-\*\/\(\)\s]+$")
 
