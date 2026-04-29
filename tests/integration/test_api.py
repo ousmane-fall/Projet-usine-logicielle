@@ -53,9 +53,7 @@ def test_get_task_not_found(client):
 def test_update_task(client):
     r = client.post("/api/tasks", json={"title": "Ancien titre"})
     task_id = r.json["id"]
-    r = client.put(
-        f"/api/tasks/{task_id}", json={"title": "Nouveau titre", "status": "done"}
-    )
+    r = client.put(f"/api/tasks/{task_id}", json={"title": "Nouveau titre", "status": "done"})
     assert r.status_code == 200
     assert r.json["title"] == "Nouveau titre"
     assert r.json["status"] == "done"

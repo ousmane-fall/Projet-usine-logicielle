@@ -26,9 +26,7 @@ def _resolve_secret_key():
 
 def create_app(config=None):
     app = Flask(__name__)
-    app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
-        "DATABASE_URL", "sqlite:///taskflow.db"
-    )
+    app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get("DATABASE_URL", "sqlite:///taskflow.db")
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SECRET_KEY"] = _resolve_secret_key()
 
@@ -44,6 +42,7 @@ def create_app(config=None):
 
     if not app.config.get("TESTING"):
         from prometheus_flask_exporter import PrometheusMetrics
+
         PrometheusMetrics(app)
 
     @app.route("/")
@@ -52,6 +51,7 @@ def create_app(config=None):
 
     with app.app_context():
         from app.api import api_bp
+
         app.register_blueprint(api_bp, url_prefix="/api")
         db.create_all()
 

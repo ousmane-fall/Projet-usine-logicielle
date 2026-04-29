@@ -55,7 +55,7 @@ class Calculator:
 
     @staticmethod
     def power(a: Number, b: Number) -> Number:
-        return a ** b
+        return a**b
 
     @staticmethod
     def sqrt(a: Number) -> float:

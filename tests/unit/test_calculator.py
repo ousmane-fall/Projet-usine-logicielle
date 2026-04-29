@@ -140,22 +140,20 @@ class TestCalculateValid:
             ("2 - 5", -3),
             ("3 * 4", 12),
             ("8 / 2", 4),
-            ("1 + 2 * 3", 7),                  # priorité
-            ("(1 + 2) * 3", 9),                # parenthèses
-            ("((1 + 2) * (3 + 4))", 21),       # imbriquées
-            ("1.5 + 2.25", 3.75),              # décimaux
-            ("  10   /   4  ", 2.5),           # espaces
-            ("-3 + 5", 2),                     # unaire -
-            ("+3 + 5", 8),                     # unaire +
+            ("1 + 2 * 3", 7),  # priorité
+            ("(1 + 2) * 3", 9),  # parenthèses
+            ("((1 + 2) * (3 + 4))", 21),  # imbriquées
+            ("1.5 + 2.25", 3.75),  # décimaux
+            ("  10   /   4  ", 2.5),  # espaces
+            ("-3 + 5", 2),  # unaire -
+            ("+3 + 5", 8),  # unaire +
             ("-(2 + 3)", -5),
-            ("10 / 4 * 2", 5.0),               # associativité gauche
+            ("10 / 4 * 2", 5.0),  # associativité gauche
             ("1 - 2 - 3", -4),
         ],
     )
     def test_calculate(self, expr, expected):
-        assert math.isclose(
-            Calculator.calculate(expr), expected, rel_tol=1e-9, abs_tol=1e-9
-        )
+        assert math.isclose(Calculator.calculate(expr), expected, rel_tol=1e-9, abs_tol=1e-9)
 
 
 # ──────────────────────────────────────────────────────────────────────────

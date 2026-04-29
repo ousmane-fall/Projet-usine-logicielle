@@ -9,9 +9,7 @@ class Task(db.Model):
     description = db.Column(db.Text, default="")
     status = db.Column(db.String(20), default="todo")  # todo | in_progress | done
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(
-        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
-    )
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     VALID_STATUSES = ("todo", "in_progress", "done")
 
