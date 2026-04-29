@@ -8,8 +8,8 @@ des logs centralisés et un déploiement infrastructure as code sur Azure.
 
 L'idée était de couvrir toutes les briques classiques d'un projet DevOps,
 sans pour autant tomber dans l'over-engineering. Le projet doit rester
-compréhensible et démontrable par un étudiant, donc à chaque fois qu'il a fallu
-choisir entre "propre mais compliqué" et "simple et clair", j'ai privilégié
+compréhensible donc à chaque fois qu'il a fallu
+choisir entre "propre mais compliqué" et "simple et clair", on a privilégié
 le simple et clair, en notant à la fin du document ce qu'il faudrait améliorer
 pour aller en production pour de vrai.
 
@@ -201,37 +201,3 @@ tailles bornées.
 Côté CI, bandit scanne le code à chaque commit, et pip-audit vérifie les
 dépendances (en mode informatif).
 
-## Ce qui pourrait être amélioré
-
-Comme dit en intro, j'ai assumé pas mal de raccourcis pour garder le projet
-simple. Si on devait le faire tourner pour de vrai en production, voici ce
-qui mériterait d'être renforcé :
-
-Côté infra, le state Terraform est stocké en local alors qu'en équipe il
-faudrait un backend distant comme Azure Blob Storage. Le NSG est aussi
-relativement ouvert sur Internet et mériterait des règles plus restrictives,
-et il faudrait un certificat HTTPS (Let's Encrypt) au lieu d'exposer l'app
-en HTTP en clair.
-
-Côté pipeline, le déploiement Azure pourrait être réintégré dans le CD pour
-être complètement automatique, SonarCloud pourrait devenir obligatoire et
-pip-audit pourrait devenir bloquant (avec une politique claire pour gérer les
-faux positifs). On pourrait aussi ajouter Trivy pour scanner les images
-Docker et hadolint pour le Dockerfile lui-même.
-
-Côté application, SQLite est suffisant pour la démo mais en prod on partirait
-sur PostgreSQL avec des sauvegardes régulières. Et côté monitoring, il
-manque de l'alerting (Alertmanager + règles Prometheus) pour être notifié
-quand quelque chose va mal.
-
-Enfin, il n'y a qu'un seul environnement : un vrai projet aurait au moins
-un dev, un staging et une prod, gérés via des workspaces Terraform.
-
-## Pour aller plus loin
-
-Deux documents complémentaires sont disponibles si on veut creuser :
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) explique le schéma d'architecture
-global, et [QUALITY_REPORT.md](QUALITY_REPORT.md) détaille toute la démarche
-qualité avec ce qui est automatisé, ce qui est manuel et les pistes
-d'amélioration. La doc spécifique à la partie infra est dans
-[infra/README.md](infra/README.md).
