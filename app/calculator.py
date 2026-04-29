@@ -6,12 +6,11 @@ binaires +, -, *, /, plus l'unaire -). Toute autre construction (appel de
 fonction, nom, attribut, etc.) est rejetée.
 """
 
-from __future__ import annotations
-
 import ast
 import math
 import operator
 import re
+
 Number = int | float
 
 _ALLOWED_CHARS = re.compile(r"^[0-9\.\+\-\*\/\(\)\s]+$")

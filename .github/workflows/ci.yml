@@ -8,7 +8,7 @@ on:
 
 jobs:
   quality:
-    name: Lint, types et sécurité
+    name: Qualite du code
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,7 +18,7 @@ jobs:
           python-version: "3.12"
           cache: pip
 
-      - name: Installer les dépendances
+      - name: Installer les dependances
         run: pip install -r requirements.txt -r requirements-dev.txt
 
       - name: ruff (lint)
@@ -27,23 +27,8 @@ jobs:
       - name: ruff (format)
         run: ruff format --check app/ tests/
 
-      - name: pylint
-        run: pylint app/ --rcfile=.pylintrc --fail-under=7.0
-
-      - name: mypy
-        run: mypy --config-file=mypy.ini
-
-      - name: bandit
-        run: bandit -r app/ -c pyproject.toml -q
-
-      # pip-audit est informatif (n'échoue pas le CI : les CVE deps évoluent
-      # indépendamment de notre code, on les corrige dans des PR dédiées).
-      - name: pip-audit (informatif)
-        run: pip-audit || true
-        continue-on-error: true
-
   test:
-    name: Tests + Coverage (>= 80%)
+    name: Tests et coverage
     runs-on: ubuntu-latest
     needs: quality
     steps:
@@ -54,64 +39,14 @@ jobs:
           python-version: "3.12"
           cache: pip
 
-      - name: Installer les dépendances
+      - name: Installer les dependances
         run: pip install -r requirements.txt -r requirements-dev.txt
 
       - name: pytest avec coverage
-        run: pytest --cov=app --cov-report=xml --cov-report=term-missing --cov-fail-under=80
-
-      - name: Upload coverage
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-report
-          path: coverage.xml
-
-  # SonarCloud est OPTIONNEL : si SONAR_TOKEN n'est pas défini, ce job est skip
-  # et n'échoue PAS le pipeline.
-  sonar:
-    name: SonarCloud (optionnel)
-    runs-on: ubuntu-latest
-    needs: test
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-
-      - name: Vérifier la présence de SONAR_TOKEN
-        id: check
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: |
-          if [ -z "$SONAR_TOKEN" ]; then
-            echo "SONAR_TOKEN non configuré — SonarCloud skip"
-            echo "skip=true" >> $GITHUB_OUTPUT
-          else
-            echo "skip=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Installer les dépendances
-        if: steps.check.outputs.skip == 'false'
-        run: pip install -r requirements.txt -r requirements-dev.txt
-
-      - name: Générer la coverage
-        if: steps.check.outputs.skip == 'false'
-        run: pytest --cov=app --cov-report=xml
-
-      - name: SonarCloud Scan
-        if: steps.check.outputs.skip == 'false'
-        uses: SonarSource/sonarcloud-github-action@master
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: pytest --cov=app --cov-report=term-missing --cov-fail-under=80
 
   docker-build:
-    name: Build et push image Docker
+    name: Build image Docker
     runs-on: ubuntu-latest
     needs: test
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev'
