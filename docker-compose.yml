@@ -57,7 +57,7 @@ services:
     restart: unless-stopped
     depends_on:
       loki:
-        condition: service_healthy
+        condition: service_started
       prometheus:
         condition: service_healthy
     healthcheck:
@@ -78,12 +78,6 @@ services:
     networks:
       - taskflow_net
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3100/ready"]
-      interval: 30s
-      timeout: 5s
-      start_period: 20s
-      retries: 3
 
   promtail:
     image: grafana/promtail:latest
@@ -97,7 +91,7 @@ services:
     restart: unless-stopped
     depends_on:
       loki:
-        condition: service_healthy
+        condition: service_started
 
 networks:
   taskflow_net:
