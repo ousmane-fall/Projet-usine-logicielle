@@ -1,0 +1,43 @@
+---
+- name: Installer les dépendances système
+  apt:
+    name:
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - gnupg
+      - lsb-release
+    state: present
+    update_cache: true
+
+- name: Ajouter la clé GPG Docker
+  apt_key:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    state: present
+
+- name: Ajouter le dépôt Docker
+  apt_repository:
+    repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+    state: present
+
+- name: Installer Docker Engine
+  apt:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-compose-plugin
+    state: present
+    update_cache: true
+
+- name: Démarrer et activer Docker
+  service:
+    name: docker
+    state: started
+    enabled: true
+
+- name: Ajouter l'utilisateur au groupe docker
+  user:
+    name: "{{ ansible_user }}"
+    groups: docker
+    append: true

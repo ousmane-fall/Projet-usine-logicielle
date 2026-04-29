@@ -1,0 +1,13 @@
+---
+- name: Déploiement complet TaskFlow
+  hosts: servers
+  become: true
+  vars:
+    app_image: "ghcr.io/YOUR_GITHUB_USERNAME/taskflow"
+    image_tag: "latest"
+    project_dir: /opt/taskflow
+
+  roles:
+    - docker
+    - app
+    - monitoring

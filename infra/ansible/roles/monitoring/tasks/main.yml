@@ -1,0 +1,31 @@
+---
+- name: Vérifier que Prometheus est accessible
+  uri:
+    url: "http://localhost:9090/-/healthy"
+    status_code: 200
+  retries: 5
+  delay: 5
+  register: prometheus_health
+
+- name: Vérifier que Grafana est accessible
+  uri:
+    url: "http://localhost:3000/api/health"
+    status_code: 200
+  retries: 5
+  delay: 5
+  register: grafana_health
+
+- name: Vérifier que Loki est accessible
+  uri:
+    url: "http://localhost:3100/ready"
+    status_code: 200
+  retries: 5
+  delay: 5
+  register: loki_health
+
+- name: Afficher le résumé du monitoring
+  debug:
+    msg:
+      - "Prometheus: {{ 'OK' if prometheus_health.status == 200 else 'KO' }}"
+      - "Grafana:    {{ 'OK' if grafana_health.status == 200 else 'KO' }}"
+      - "Loki:       {{ 'OK' if loki_health.status == 200 else 'KO' }}"

@@ -1,0 +1,80 @@
+name: CD
+
+# Pipeline CD simplifié — validation uniquement.
+# Le déploiement Azure réel se fait MANUELLEMENT (voir README "Déploiement Azure").
+#
+# Ce workflow vérifie que tout est prêt à déployer :
+#   1. L'image Docker se build et démarre correctement
+#   2. /api/health répond OK
+#   3. Le code Terraform est bien formaté et valide
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  docker-smoke-test:
+    name: Build et smoke test Docker
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image Docker
+        run: docker build -t taskflow:smoke .
+
+      - name: Démarrer le conteneur
+        run: |
+          docker run -d --name smoke \
+            -e SECRET_KEY=ci-smoke-secret \
+            -p 5000:5000 \
+            taskflow:smoke
+
+      - name: Smoke test sur /api/health
+        run: |
+          for i in $(seq 1 15); do
+            if curl -sf http://localhost:5000/api/health; then
+              echo ""
+              echo "Health check OK"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Health check FAILED"
+          docker logs smoke
+          exit 1
+
+      - name: Logs du conteneur
+        if: always()
+        run: docker logs smoke || true
+
+      - name: Cleanup
+        if: always()
+        run: docker rm -f smoke || true
+
+  terraform-validate:
+    name: Validation Terraform (fmt + validate)
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive
+        working-directory: infra/terraform
+
+      - name: Terraform Init (sans backend distant)
+        run: terraform init -backend=false
+        working-directory: infra/terraform
+
+      - name: Terraform Validate
+        run: terraform validate
+        working-directory: infra/terraform

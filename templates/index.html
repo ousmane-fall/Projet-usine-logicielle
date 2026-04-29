@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>TaskFlow</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
+
+    header {
+      background: #1e293b;
+      padding: 20px 40px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      border-bottom: 1px solid #334155;
+    }
+    header h1 { font-size: 1.6rem; color: #38bdf8; }
+    header span { font-size: 0.85rem; color: #64748b; }
+
+    .container { max-width: 900px; margin: 40px auto; padding: 0 20px; }
+
+    .form-card {
+      background: #1e293b;
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 32px;
+      border: 1px solid #334155;
+    }
+    .form-card h2 { font-size: 1rem; color: #94a3b8; margin-bottom: 16px; text-transform: uppercase; letter-spacing: 1px; }
+    .form-row { display: flex; gap: 12px; flex-wrap: wrap; }
+    input[type="text"], textarea, select {
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      color: #e2e8f0;
+      padding: 10px 14px;
+      font-size: 0.95rem;
+      outline: none;
+      transition: border 0.2s;
+    }
+    input[type="text"]:focus, textarea:focus { border-color: #38bdf8; }
+    input[type="text"] { flex: 1; min-width: 200px; }
+    textarea { width: 100%; margin-top: 10px; resize: vertical; min-height: 60px; }
+    button {
+      background: #38bdf8;
+      color: #0f172a;
+      border: none;
+      border-radius: 8px;
+      padding: 10px 20px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    button:hover { background: #0ea5e9; }
+
+    .filters { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
+    .filter-btn {
+      background: #1e293b;
+      color: #94a3b8;
+      border: 1px solid #334155;
+      border-radius: 20px;
+      padding: 6px 16px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .filter-btn.active, .filter-btn:hover { background: #38bdf8; color: #0f172a; border-color: #38bdf8; font-weight: 700; }
+
+    .tasks-grid { display: flex; flex-direction: column; gap: 12px; }
+    .task-card {
+      background: #1e293b;
+      border-radius: 10px;
+      padding: 18px 20px;
+      border: 1px solid #334155;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      transition: border 0.2s;
+    }
+    .task-card:hover { border-color: #38bdf8; }
+    .task-info { flex: 1; }
+    .task-title { font-size: 1rem; font-weight: 600; color: #f1f5f9; }
+    .task-desc { font-size: 0.85rem; color: #64748b; margin-top: 4px; }
+    .task-date { font-size: 0.75rem; color: #475569; margin-top: 6px; }
+
+    .badge {
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 0.78rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .badge-todo { background: #1e3a5f; color: #38bdf8; }
+    .badge-in_progress { background: #3b2f0a; color: #fbbf24; }
+    .badge-done { background: #0a3b1e; color: #4ade80; }
+
+    .task-actions { display: flex; gap: 8px; }
+    .btn-status {
+      background: #334155;
+      color: #94a3b8;
+      font-size: 0.78rem;
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-weight: 600;
+    }
+    .btn-status:hover { background: #fbbf24; color: #0f172a; }
+    .btn-delete {
+      background: #3b1a1a;
+      color: #f87171;
+      font-size: 0.78rem;
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-weight: 600;
+    }
+    .btn-delete:hover { background: #ef4444; color: white; }
+
+    .empty { text-align: center; color: #475569; padding: 60px; font-size: 1rem; }
+    .count { color: #64748b; font-size: 0.85rem; margin-bottom: 16px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>TaskFlow</h1>
+    <span>Gestionnaire de tâches — Usine Logicielle</span>
+  </header>
+
+  <div class="container">
+
+    <div class="form-card">
+      <h2>Nouvelle tâche</h2>
+      <div class="form-row">
+        <input type="text" id="title" placeholder="Titre de la tâche..." />
+        <button onclick="createTask()">+ Ajouter</button>
+      </div>
+      <textarea id="description" placeholder="Description (optionnel)..."></textarea>
+    </div>
+
+    <div class="filters">
+      <button class="filter-btn active" onclick="filterTasks('all', this)">Toutes</button>
+      <button class="filter-btn" onclick="filterTasks('todo', this)">À faire</button>
+      <button class="filter-btn" onclick="filterTasks('in_progress', this)">En cours</button>
+      <button class="filter-btn" onclick="filterTasks('done', this)">Terminées</button>
+    </div>
+
+    <div class="count" id="count"></div>
+    <div class="tasks-grid" id="tasks"></div>
+  </div>
+
+  <script>
+    let currentFilter = 'all';
+
+    async function loadTasks() {
+      const url = currentFilter === 'all' ? '/api/tasks' : `/api/tasks?status=${currentFilter}`;
+      const res = await fetch(url);
+      const tasks = await res.json();
+      const container = document.getElementById('tasks');
+      const count = document.getElementById('count');
+      count.textContent = `${tasks.length} tâche${tasks.length > 1 ? 's' : ''}`;
+      if (tasks.length === 0) {
+        container.innerHTML = '<div class="empty">Aucune tâche pour le moment</div>';
+        return;
+      }
+      container.innerHTML = tasks.map(t => `
+        <div class="task-card">
+          <div class="task-info">
+            <div class="task-title">${t.title}</div>
+            ${t.description ? `<div class="task-desc">${t.description}</div>` : ''}
+            <div class="task-date">Créée le ${new Date(t.created_at).toLocaleDateString('fr-FR')}</div>
+          </div>
+          <span class="badge badge-${t.status}">${statusLabel(t.status)}</span>
+          <div class="task-actions">
+            ${nextStatus(t.status) ? `<button class="btn-status" onclick="changeStatus(${t.id}, '${nextStatus(t.status)}')">${nextLabel(t.status)}</button>` : ''}
+            <button class="btn-delete" onclick="deleteTask(${t.id})">X</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function statusLabel(s) {
+      return { todo: 'À faire', in_progress: 'En cours', done: 'Terminé' }[s] || s;
+    }
+    function nextStatus(s) {
+      return { todo: 'in_progress', in_progress: 'done', done: null }[s];
+    }
+    function nextLabel(s) {
+      return { todo: 'Démarrer', in_progress: 'Terminer' }[s] || '';
+    }
+
+    async function createTask() {
+      const title = document.getElementById('title').value.trim();
+      const description = document.getElementById('description').value.trim();
+      if (!title) { alert('Le titre est requis !'); return; }
+      await fetch('/api/tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, description })
+      });
+      document.getElementById('title').value = '';
+      document.getElementById('description').value = '';
+      loadTasks();
+    }
+
+    async function changeStatus(id, status) {
+      await fetch(`/api/tasks/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status })
+      });
+      loadTasks();
+    }
+
+    async function deleteTask(id) {
+      await fetch(`/api/tasks/${id}`, { method: 'DELETE' });
+      loadTasks();
+    }
+
+    function filterTasks(filter, btn) {
+      currentFilter = filter;
+      document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      loadTasks();
+    }
+
+    loadTasks();
+    setInterval(loadTasks, 30000);
+  </script>
+</body>
+</html>

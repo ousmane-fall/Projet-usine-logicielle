@@ -1,0 +1,15 @@
+# ─────────────────────────────────────────────────────────────
+# terraform.tfvars.example — Copier en terraform.tfvars (jamais committer)
+# ─────────────────────────────────────────────────────────────
+
+resource_group_name = "taskflow-rg"
+location            = "West Europe"
+vm_size             = "Standard_B1s"
+admin_username      = "azureuser"
+
+# Contenu de ~/.ssh/id_rsa.pub
+ssh_public_key = "ssh-rsa AAAA..."
+
+# IP autorisée à accéder à Grafana/Prometheus (restreindre à votre IP)
+# Ex: "203.0.113.0/32" ou "0.0.0.0/0" si non restreint (déconseillé)
+allowed_monitoring_cidr = "0.0.0.0/0"
